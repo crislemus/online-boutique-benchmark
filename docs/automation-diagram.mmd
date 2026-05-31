@@ -1,0 +1,40 @@
+%% Online Boutique processor-benchmark — automation & data flow
+flowchart TB
+    subgraph Dev["Engineer / CI"]
+        TF["Terraform\n(IaC: VPC, GKE, node pools, GMP)"]
+        CB["Cloud Build\nprovision.yaml / teardown.yaml"]
+        MK["Makefile / scripts\n(local one-command parity)"]
+    end
+
+    GCS["GCS bucket\n(Terraform remote state, versioned)"]
+    TF --- GCS
+
+    subgraph GKE["GKE Standard cluster — us-central1-a (VPC-native)"]
+        direction TB
+        subgraph N2["node pool: pool-n2 (n2-standard-4)  proc=n2"]
+            OBN["namespace boutique-n2\nOnline Boutique x11 + loadgenerator"]
+        end
+        subgraph C3["node pool: pool-c3 (c3-standard-4)  proc=c3"]
+            OBC["namespace boutique-c3\nOnline Boutique x11 + loadgenerator"]
+        end
+        subgraph MON["namespace monitoring"]
+            FE["GMP query frontend :9090"]
+            GRAF["Grafana\n(provisioned datasource + dashboard)"]
+        end
+        KUBELET["kubelet + cAdvisor\n(OperatorConfig: kubeletScraping)"]
+    end
+
+    CB --> TF
+    CB --> GKE
+    MK --> TF
+    MK --> GKE
+
+    OBN -- "container_cpu / memory" --> KUBELET
+    OBC -- "container_cpu / memory" --> KUBELET
+    KUBELET -- "managed collection" --> MONARCH["Managed Service for Prometheus\n(Monarch)"]
+    FE -- "PromQL (node-SA ADC)" --> MONARCH
+    GRAF -- "Prometheus datasource" --> FE
+    USER["Engineer"] -- "port-forward :3000" --> GRAF
+
+    classDef pool fill:#eef,stroke:#88a;
+    class N2,C3 pool;

@@ -1,0 +1,74 @@
+# Managed Service for Prometheus query frontend.
+# Exposes a Prometheus-compatible API on :9090 and proxies PromQL to Monarch
+# via the Cloud Monitoring API. Authenticates with Application Default
+# Credentials = the node's attached service account (Editor -> monitoring read).
+# Grafana points its Prometheus data source at http://frontend.monitoring.svc:9090
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: monitoring
+  labels:
+    app: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - name: frontend
+          image: gke.gcr.io/prometheus-engine/frontend:v0.15.3-gke.0
+          args:
+            - "--web.listen-address=:9090"
+            - "--query.project-id=performance-analysis-2026"
+          ports:
+            - containerPort: 9090
+              name: web
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: web
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: web
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            privileged: false
+            readOnlyRootFilesystem: true
+      securityContext:
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: monitoring
+  labels:
+    app: frontend
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend
+  ports:
+    - name: web
+      port: 9090
+      targetPort: 9090

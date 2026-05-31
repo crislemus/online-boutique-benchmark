@@ -1,0 +1,22 @@
+# Reference only — DO NOT `kubectl apply` this file.
+#
+# On GKE, the Managed Service for Prometheus OperatorConfig is a singleton named
+# "config" in namespace gmp-public, created and owned by the managed-collection
+# addon (addonmanager mode EnsureExists). Its fields live at the TOP LEVEL
+# (collection/rules/scaling), NOT under spec, and a full `apply` is rejected by
+# strict decoding + addon ownership.
+#
+# Enable kubelet + cAdvisor scraping with an idempotent merge patch instead:
+#
+#   kubectl -n gmp-public patch operatorconfig config --type=merge \
+#     -p '{"collection":{"kubeletScraping":{"interval":"30s"}}}'
+#
+# Resulting (abbreviated) object:
+apiVersion: monitoring.googleapis.com/v1
+kind: OperatorConfig
+metadata:
+  name: config
+  namespace: gmp-public
+collection:
+  kubeletScraping:
+    interval: 30s

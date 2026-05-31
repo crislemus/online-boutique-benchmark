@@ -1,0 +1,102 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "title": "Online Boutique — Processor Benchmark (N2 vs C3)",
+  "uid": "boutique-bench",
+  "tags": ["benchmark", "processors", "online-boutique"],
+  "time": { "from": "now-30m", "to": "now" },
+  "timezone": "",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Head-to-head: identical Online Boutique load on each processor",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "CPU cores consumed by the workload (by processor)",
+      "description": "Sum of app-container CPU usage per namespace. Same offered Locust load on both, so lower = more efficient processor.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "none", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "calcs": ["mean", "max"], "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum by (namespace) (rate(container_cpu_usage_seconds_total{namespace=~\"boutique-.*\", container!=\"\", container!=\"POD\"}[2m]))",
+          "legendFormat": "{{namespace}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Memory working set (by processor)",
+      "description": "Sum of app-container working-set memory per namespace.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "calcs": ["mean", "max"], "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "sum by (namespace) (container_memory_working_set_bytes{namespace=~\"boutique-.*\", container!=\"\", container!=\"POD\"})",
+          "legendFormat": "{{namespace}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "bargauge",
+      "title": "Avg CPU cores over selected range (lower is better)",
+      "description": "Average workload CPU per processor across the dashboard time range — the headline efficiency comparison.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 3, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 2 }] } }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [
+        {
+          "refId": "N2",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "avg_over_time((sum(rate(container_cpu_usage_seconds_total{namespace=\"boutique-n2\", container!=\"\", container!=\"POD\"}[2m])))[$__range:])",
+          "legendFormat": "N2 (prev-gen Intel)",
+          "instant": true
+        },
+        {
+          "refId": "C3",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "avg_over_time((sum(rate(container_cpu_usage_seconds_total{namespace=\"boutique-c3\", container!=\"\", container!=\"POD\"}[2m])))[$__range:])",
+          "legendFormat": "C3 (Sapphire Rapids)",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Per-service CPU (top consumers, both pools)",
+      "description": "rate(container_cpu_usage_seconds_total) by workload + processor.",
+      "datasource": { "type": "prometheus", "uid": "gmp" },
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "none", "custom": { "drawStyle": "line", "fillOpacity": 5 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "calcs": ["mean"], "placement": "right" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "gmp" },
+          "expr": "topk(12, sum by (namespace, container) (rate(container_cpu_usage_seconds_total{namespace=~\"boutique-.*\", container!=\"\", container!=\"POD\"}[2m])))",
+          "legendFormat": "{{namespace}}/{{container}}"
+        }
+      ]
+    }
+  ]
+}
