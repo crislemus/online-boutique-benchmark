@@ -60,13 +60,13 @@ resource "google_container_cluster" "primary" {
     enable_components = ["SYSTEM_COMPONENTS", "WORKLOADS"]
   }
 
-  # NOTE (permissions-driven decision):
-  # Workload Identity node metadata is intentionally NOT enabled. The runtime SA
-  # available in this project has Editor but cannot set IAM policy, so KSA->GSA
-  # bindings cannot be created. Pods therefore rely on the node's attached SA
-  # (Editor -> monitoring read/write) for GMP collection and the Grafana read
-  # path. In production, enable Workload Identity + least-privilege GSAs instead
-  # (see README "Production hardening").
+  # Workload Identity Federation for GKE: workloads assume least-privilege GSAs
+  # via KSA->GSA mappings instead of the node SA. The GMP query frontend reads
+  # through a dedicated gmp-reader GSA (see workload_identity.tf); application
+  # pods get no Google credentials. Nodes run as the dedicated gke-node-sa.
+  workload_identity_config {
+    workload_pool = "${var.project_id}.svc.id.goog"
+  }
 
   # Allow `terraform destroy` for this ephemeral benchmark environment.
   deletion_protection = false
@@ -101,23 +101,29 @@ resource "google_container_node_pool" "pools" {
     disk_size_gb = var.node_disk_size_gb
     disk_type    = var.node_disk_type # pd-balanced (C3 does not support pd-standard)
 
+    # Dedicated least-privilege node SA (not the default compute/Editor SA).
+    service_account = google_service_account.node_sa.email
+
     # `proc` label is used by the Online Boutique overlays' nodeSelector to pin
     # each copy of the app to a specific processor family.
     labels = {
       proc = each.value.proc_label
     }
 
-    # cloud-platform scope so the node SA can write metrics (GMP collection) and
-    # the GMP frontend pod can read time series via ADC.
+    # cloud-platform scope; effective permissions are bounded by the node SA's
+    # IAM roles. The GMP managed collector writes metrics through this SA.
     oauth_scopes = ["https://www.googleapis.com/auth/cloud-platform"]
 
     metadata = {
       disable-legacy-endpoints = "true"
     }
 
-    # Keep node-SA ADC available to pods (no GKE_METADATA / Workload Identity).
+    # Workload Identity node metadata: pods use mapped GSAs, not the node SA.
     workload_metadata_config {
-      mode = "GCE_METADATA"
+      mode = "GKE_METADATA"
     }
   }
+
+  # Ensure node-SA roles exist before nodes boot (so the collector can write).
+  depends_on = [google_project_iam_member.node_sa_roles]
 }

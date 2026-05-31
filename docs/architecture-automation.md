@@ -43,8 +43,8 @@ flowchart TB
     MK --> GKE
     OBN -- "container_cpu / memory" --> KUBELET
     OBC -- "container_cpu / memory" --> KUBELET
-    KUBELET -- "managed collection" --> MONARCH["Managed Service for Prometheus<br/>(Monarch)"]
-    FE -- "PromQL (node-SA ADC)" --> MONARCH
+    KUBELET -- "managed collection (gke-node-sa: metricWriter)" --> MONARCH["Managed Service for Prometheus<br/>(Monarch)"]
+    FE -- "PromQL (Workload Identity: gmp-reader, monitoring.viewer)" --> MONARCH
     GRAF -- "Prometheus datasource" --> FE
     USER["Engineer"] -- "port-forward :3000" --> GRAF
 ```
@@ -105,11 +105,26 @@ make bench         # soak + capture evidence to docs/results/
 make down          # terraform destroy
 ```
 
-## Production hardening (what I'd change beyond the PoC)
+## Security: identity model (implemented)
 
-- **Workload Identity + least-privilege SAs** instead of the node SA. *(In this exercise the
-  runtime SA had Editor but could not set IAM policy, so KSA→GSA bindings weren't possible; the
-  node-SA path is the documented fallback. The cluster is otherwise WI-ready.)*
+This stack uses **Workload Identity Federation for GKE** with least-privilege service accounts
+(`terraform/workload_identity.tf`):
+
+- **Dedicated node SA `gke-node-sa`** (replaces the default compute/Editor SA on nodes) with a
+  minimal role set: `monitoring.metricWriter`, `monitoring.viewer`, `logging.logWriter`,
+  `stackdriver.resourceMetadata.writer`, `artifactregistry.reader`. The GMP managed collector
+  writes metrics through this SA.
+- **Dedicated reader GSA `gmp-reader`** (`roles/monitoring.viewer` only), mapped via Workload
+  Identity to the `monitoring/gmp-frontend` KSA — so Grafana's read path holds *only* read access.
+- **Application pods get no Google credentials** (their default KSA is unmapped) — least privilege
+  and a clean isolation boundary.
+
+> *History:* an earlier revision fell back to the node SA for monitoring because the runtime SA
+> lacked `setIamPolicy`. Once `resourcemanager.projectIamAdmin` + `iam.serviceAccountAdmin` were
+> granted, this was upgraded to the Workload Identity design above.
+
+## Production hardening (what I'd change further)
+
 - **Dedicated `system` node pool** + tainted benchmark pools for fully isolated measurements.
 - **Private GKE control plane**, authorized networks, and Binary Authorization.
 - **Pinned, mirrored images** in Artifact Registry; Cloud Build triggers on Git push with

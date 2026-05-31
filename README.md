@@ -24,8 +24,12 @@ design decisions, methodology, and diagram.
 
 ## Latest result (PoC snapshot)
 
-At identical load, **C3 (Sapphire Rapids) was ~40% more CPU-efficient per request** than N2, with
-lower latency and equal memory. Details: [`docs/results/summary.md`](docs/results/summary.md).
+At identical load, **C3 (Sapphire Rapids) consumed ~24% less CPU** (~17% less CPU per request) than
+N2, with ~30% lower median latency and equal memory. Charts + details:
+[`docs/results/`](docs/results) (`chart-cpu.png`, `chart-cpu-per-req.png`, `chart-latency.png`) and
+[`summary.md`](docs/results/summary.md).
+
+![CPU comparison](docs/results/chart-cpu.png)
 
 ## Prerequisites
 
@@ -61,11 +65,17 @@ scripts/      connect / deploy / run-benchmark / teardown
 docs/         architecture doc, diagram, results/
 ```
 
+## Security model
+
+Uses **Workload Identity Federation for GKE** with least-privilege service accounts
+(`terraform/workload_identity.tf`): a dedicated minimal **`gke-node-sa`** on nodes, a
+**`gmp-reader`** GSA (`monitoring.viewer` only) mapped to the GMP frontend KSA for Grafana's read
+path, and **no Google credentials on application pods**. See
+[docs/architecture-automation.md](docs/architecture-automation.md) → *Security: identity model*.
+
 ## Notes & limitations
 
-- This is a **proof of concept**. The runtime service account available in the exercise project
-  had Editor but could not set IAM policy, so the deployment uses the **node service account** for
-  monitoring access rather than Workload Identity. The cluster is WI-ready; see the *Production
-  hardening* section of the architecture doc for the recommended setup.
+- This is a **proof of concept** (single short run, light load). For publication-grade rigor, see
+  *Production hardening* in the architecture doc.
 - `gke-gcloud-auth-plugin` is required by `kubectl` for GKE; on a snap-managed gcloud you may need
   a separate SDK install or a token-based kubeconfig.

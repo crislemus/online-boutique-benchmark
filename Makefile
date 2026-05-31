@@ -28,6 +28,9 @@ dashboards: ## Port-forward Grafana to http://localhost:3000
 bench: ## Run the benchmark and capture evidence to docs/results/
 	./scripts/run-benchmark.sh
 
+charts: ## Render comparison charts (PNG) from captured results (needs matplotlib)
+	python3 scripts/make-charts.py
+
 down: ## Destroy all billable resources
 	./scripts/teardown.sh
 

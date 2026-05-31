@@ -1,8 +1,17 @@
 # Managed Service for Prometheus query frontend.
 # Exposes a Prometheus-compatible API on :9090 and proxies PromQL to Monarch
-# via the Cloud Monitoring API. Authenticates with Application Default
-# Credentials = the node's attached service account (Editor -> monitoring read).
+# via the Cloud Monitoring API. Authenticates via Workload Identity: the
+# gmp-frontend KSA below is mapped to the dedicated gmp-reader GSA
+# (roles/monitoring.viewer only — see terraform/workload_identity.tf).
 # Grafana points its Prometheus data source at http://frontend.monitoring.svc:9090
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gmp-frontend
+  namespace: monitoring
+  annotations:
+    iam.gke.io/gcp-service-account: gmp-reader@performance-analysis-2026.iam.gserviceaccount.com
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -20,6 +29,7 @@ spec:
       labels:
         app: frontend
     spec:
+      serviceAccountName: gmp-frontend
       automountServiceAccountToken: true
       containers:
         - name: frontend

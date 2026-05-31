@@ -67,3 +67,11 @@ EOF
 
 echo "==> Wrote ${RESULTS}/summary.md"
 cat "${RESULTS}/summary.md"
+
+# Render comparison charts if matplotlib is available (optional, non-fatal).
+if python3 -c "import matplotlib" >/dev/null 2>&1; then
+  echo "==> Rendering comparison charts"
+  python3 "${REPO_ROOT}/scripts/make-charts.py" || true
+else
+  echo "==> matplotlib not installed; skipping charts (run 'make charts' later)"
+fi

@@ -31,8 +31,8 @@ flowchart TB
 
     OBN -- "container_cpu / memory" --> KUBELET
     OBC -- "container_cpu / memory" --> KUBELET
-    KUBELET -- "managed collection" --> MONARCH["Managed Service for Prometheus\n(Monarch)"]
-    FE -- "PromQL (node-SA ADC)" --> MONARCH
+    KUBELET -- "managed collection (gke-node-sa)" --> MONARCH["Managed Service for Prometheus\n(Monarch)"]
+    FE -- "PromQL (WI: gmp-reader)" --> MONARCH
     GRAF -- "Prometheus datasource" --> FE
     USER["Engineer"] -- "port-forward :3000" --> GRAF
 
