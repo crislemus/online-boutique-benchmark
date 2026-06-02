@@ -11,6 +11,7 @@ locals {
     for key in local.selected : key => {
       machine_type = local.catalog[key].machine_type
       proc_label   = key
+      disk_type    = local.catalog[key].disk_type
     } if contains(keys(local.catalog), key)
   }
 

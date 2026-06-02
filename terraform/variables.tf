@@ -44,8 +44,5 @@ variable "node_disk_size_gb" {
   default     = 50
 }
 
-variable "node_disk_type" {
-  description = "Boot disk type. C3 does NOT support pd-standard; pd-balanced works for both N2 and C3."
-  type        = string
-  default     = "pd-balanced"
-}
+# Boot disk type is per-platform, sourced from config/platforms.json catalog
+# (e.g. C4 requires hyperdisk-balanced; others use pd-balanced). See locals.tf.

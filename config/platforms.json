@@ -1,11 +1,11 @@
 {
-  "_comment": "Single source of truth for the processor benchmark. Read by Terraform (jsondecode) AND the shell scripts (python3). 'catalog' is the validated allowlist; 'selected' must list EXACTLY 2 distinct keys from the catalog (a 2-way comparison). Any other value fails validation in both terraform plan/apply and scripts/validate.sh.",
+  "_comment": "Single source of truth for the processor benchmark. Read by Terraform (jsondecode) AND the shell scripts (python3). 'catalog' is the validated allowlist; 'selected' must list EXACTLY 2 distinct keys from the catalog (a 2-way comparison). Any other value fails validation in both terraform plan/apply and scripts/validate.sh. disk_type is per-family: C4 requires Hyperdisk; the others use pd-balanced.",
   "catalog": {
-    "n2":  { "machine_type": "n2-standard-4",  "label": "Intel Cascade/Ice Lake" },
-    "n2d": { "machine_type": "n2d-standard-4", "label": "AMD Milan" },
-    "c3":  { "machine_type": "c3-standard-4",  "label": "Intel Sapphire Rapids" },
-    "c3d": { "machine_type": "c3d-standard-4", "label": "AMD Genoa" },
-    "c4":  { "machine_type": "c4-standard-4",  "label": "Intel Emerald Rapids" }
+    "n2":  { "machine_type": "n2-standard-4",  "label": "Intel Cascade/Ice Lake", "disk_type": "pd-balanced" },
+    "n2d": { "machine_type": "n2d-standard-4", "label": "AMD Milan",              "disk_type": "pd-balanced" },
+    "c3":  { "machine_type": "c3-standard-4",  "label": "Intel Sapphire Rapids",  "disk_type": "pd-balanced" },
+    "c3d": { "machine_type": "c3d-standard-4", "label": "AMD Genoa",              "disk_type": "pd-balanced" },
+    "c4":  { "machine_type": "c4-standard-4",  "label": "Intel Emerald Rapids",   "disk_type": "hyperdisk-balanced" }
   },
-  "selected": ["n2", "c3"]
+  "selected": ["c3", "c4"]
 }

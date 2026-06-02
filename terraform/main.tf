@@ -99,7 +99,7 @@ resource "google_container_node_pool" "pools" {
   node_config {
     machine_type = each.value.machine_type
     disk_size_gb = var.node_disk_size_gb
-    disk_type    = var.node_disk_type # pd-balanced (C3 does not support pd-standard)
+    disk_type    = each.value.disk_type # per-family (C4 needs hyperdisk-balanced)
 
     # Dedicated least-privilege node SA (not the default compute/Editor SA).
     service_account = google_service_account.node_sa.email
