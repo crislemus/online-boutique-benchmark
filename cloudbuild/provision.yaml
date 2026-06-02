@@ -1,12 +1,11 @@
 # Cloud Build pipeline: provision infrastructure + deploy the full stack.
-# Trigger manually or on push to main.
+# Calls the SAME scripts as `make` (single source of truth) — no inlined kubectl.
 #
 #   gcloud builds submit --config cloudbuild/provision.yaml
 #
 # The Cloud Build service account needs: container.admin, compute.admin,
-# iam.serviceAccountUser, monitoring.admin, storage.admin (for TF state).
-# (In this exercise's project the runtime SA has Editor but cannot set IAM
-# policy; run from an account/SA that can, or pre-grant these roles.)
+# iam.serviceAccountUser/Admin, monitoring.admin, resourcemanager.projectIamAdmin
+# (Workload Identity bindings), storage.admin (TF state).
 substitutions:
   _ZONE: us-central1-a
   _CLUSTER: boutique-bench
@@ -15,21 +14,16 @@ options:
   logging: CLOUD_LOGGING_ONLY
 
 steps:
-  # 1) Provision infra with Terraform (remote state in GCS).
+  # 1) Provision infra with Terraform (scripts/apply-infra.sh; remote state in GCS).
   - id: terraform-apply
     name: hashicorp/terraform:1.15
     entrypoint: sh
-    args:
-      - -c
-      - |
-        cd terraform
-        terraform init -input=false
-        terraform apply -auto-approve -input=false
+    args: ["scripts/apply-infra.sh"]
 
   # 2) Fetch cluster credentials (gke-gcloud-auth-plugin ships in the gcloud image).
   - id: get-credentials
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
-    entrypoint: sh
+    entrypoint: bash
     args:
       - -c
       - |
@@ -37,25 +31,14 @@ steps:
           --zone "$_ZONE" --project "$PROJECT_ID"
         cp -r /root/.kube /workspace/.kube
 
-  # 3) Deploy monitoring + both Online Boutique copies.
-  - id: deploy
+  # 3) Deploy monitoring + one Online Boutique per selected platform, then run
+  #    functional health checks — all via scripts/deploy.sh (which calls
+  #    scripts/healthcheck.sh). Same code path as `make deploy`.
+  - id: deploy-and-healthcheck
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
-    entrypoint: sh
+    entrypoint: bash
     env:
       - KUBECONFIG=/workspace/.kube/config
-    args:
-      - -c
-      - |
-        kubectl -n gmp-public patch operatorconfig config --type=merge \
-          -p '{"collection":{"kubeletScraping":{"interval":"30s"}}}'
-        kubectl apply -f k8s/monitoring/00-namespace.yaml
-        kubectl apply -f k8s/monitoring/20-gmp-frontend.yaml
-        kubectl create configmap grafana-dashboards -n monitoring \
-          --from-file=dashboards/ --dry-run=client -o yaml | kubectl apply -f -
-        kubectl apply -f k8s/monitoring/30-grafana.yaml
-        kubectl apply -k k8s/overlays/boutique-n2
-        kubectl apply -k k8s/overlays/boutique-c3
-        kubectl rollout status deploy/frontend -n boutique-n2 --timeout=300s
-        kubectl rollout status deploy/frontend -n boutique-c3 --timeout=300s
+    args: ["scripts/deploy.sh"]
 
 timeout: 2400s

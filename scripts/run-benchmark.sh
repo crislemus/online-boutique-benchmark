@@ -1,77 +1,96 @@
 #!/usr/bin/env bash
-# Drive an identical synthetic load on both Online Boutique copies, let it soak,
-# then capture comparative CPU/memory evidence from Managed Service for
-# Prometheus plus throughput/latency from the loadgenerator (Locust) logs.
+# Drive identical synthetic load on both selected Online Boutique copies, soak,
+# then capture comparative CPU/memory from Managed Service for Prometheus plus
+# throughput/latency from the loadgenerator (Locust) logs. Platform-agnostic:
+# the 2 platforms come from config/platforms.json.
 #
-# Output: docs/results/  (JSON metric snapshots, loadgen logs, summary.md)
+# Output: docs/results/  (metrics-snapshot.json, cpu_timeseries.csv, loadgen-*.log,
+#         summary.md, chart-*.png)
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO_ROOT"
+# shellcheck source=scripts/lib.sh
+source "${REPO_ROOT}/scripts/lib.sh"
+cd "$REPO_ROOT" || exit 1
 RESULTS="docs/results"
 mkdir -p "$RESULTS"
 
+SELECTED="$(platforms_selected)"
 SOAK_SECONDS="${SOAK_SECONDS:-900}"   # ~15 min steady-state by default
-FRONTEND_NS="monitoring"
-
-echo "==> Both copies use the same loadgenerator config (USERS=10, RATE=1) by design."
-kubectl get deploy loadgenerator -n boutique-n2 -o jsonpath='{.spec.template.spec.containers[0].env}' >/dev/null 2>&1 || true
+echo "==> Benchmarking platforms: ${SELECTED} (identical Locust load, USERS=10 RATE=1)"
 
 echo "==> Soaking for ${SOAK_SECONDS}s to reach steady state..."
 sleep "$SOAK_SECONDS"
 
 echo "==> Port-forwarding the GMP query frontend..."
-kubectl -n "$FRONTEND_NS" port-forward svc/frontend 9090:9090 >/tmp/pf-frontend.log 2>&1 &
+kubectl -n monitoring port-forward svc/frontend 9090:9090 >/tmp/pf-frontend.log 2>&1 &
 PF_PID=$!
 trap 'kill $PF_PID 2>/dev/null || true' EXIT
 sleep 5
 
-q() {  # PromQL instant query helper -> saves raw JSON, prints scalar value
-  local name="$1" expr="$2"
-  curl -fsG "http://localhost:9090/api/v1/query" --data-urlencode "query=${expr}" \
-    -o "${RESULTS}/${name}.json"
-  python3 -c "import json,sys; d=json.load(open('${RESULTS}/${name}.json')); r=d['data']['result']; print(float(r[0]['value'][1]) if r else float('nan'))"
-}
-
 RANGE="${SOAK_SECONDS}s"
 echo "==> Querying comparative metrics over the last ${RANGE}..."
-CPU_N2=$(q cpu_n2 "avg_over_time((sum(rate(container_cpu_usage_seconds_total{namespace=\"boutique-n2\",container!=\"\",container!=\"POD\"}[2m])))[${RANGE}:])")
-CPU_C3=$(q cpu_c3 "avg_over_time((sum(rate(container_cpu_usage_seconds_total{namespace=\"boutique-c3\",container!=\"\",container!=\"POD\"}[2m])))[${RANGE}:])")
-MEM_N2=$(q mem_n2 "avg_over_time((sum(container_memory_working_set_bytes{namespace=\"boutique-n2\",container!=\"\",container!=\"POD\"}))[${RANGE}:])")
-MEM_C3=$(q mem_c3 "avg_over_time((sum(container_memory_working_set_bytes{namespace=\"boutique-c3\",container!=\"\",container!=\"POD\"}))[${RANGE}:])")
+CONFIG_FILE="$CONFIG_FILE" RANGE="$RANGE" RESULTS="$RESULTS" python3 - <<'PY'
+import csv, json, os, time, urllib.parse, urllib.request
+cfg = json.load(open(os.environ["CONFIG_FILE"]))
+plats = cfg["selected"]
+labels = {p: cfg["catalog"][p]["label"] for p in plats}
+RANGE = os.environ["RANGE"]; RESULTS = os.environ["RESULTS"]
+BASE = "http://localhost:9090/api/v1"
 
-echo "==> Capturing loadgenerator (Locust) stats from logs..."
-kubectl logs -n boutique-n2 deploy/loadgenerator -c main --tail=60 > "${RESULTS}/loadgen-n2.log" 2>/dev/null || true
-kubectl logs -n boutique-c3 deploy/loadgenerator -c main --tail=60 > "${RESULTS}/loadgen-c3.log" 2>/dev/null || true
+def q_inst(expr):
+    u = f"{BASE}/query?" + urllib.parse.urlencode({"query": expr})
+    r = json.load(urllib.request.urlopen(u, timeout=15))["data"]["result"]
+    return float(r[0]["value"][1]) if r else float("nan")
 
-CPU_DELTA=$(python3 -c "n=$CPU_N2; c=$CPU_C3; print(f'{(n-c)/n*100:.1f}' if n>0 else 'n/a')")
-MEM_DELTA=$(python3 -c "n=$MEM_N2; c=$MEM_C3; print(f'{(n-c)/n*100:.1f}' if n>0 else 'n/a')")
+def q_range(expr, mins=15, step=30):
+    end = int(time.time()); start = end - mins * 60
+    u = f"{BASE}/query_range?" + urllib.parse.urlencode(
+        {"query": expr, "start": start, "end": end, "step": step})
+    return json.load(urllib.request.urlopen(u, timeout=15))["data"]["result"]
 
-cat > "${RESULTS}/summary.md" <<EOF
-# Benchmark summary — Online Boutique on N2 vs C3
+snap = {"platforms": plats, "labels": labels, "cpu": {}, "mem": {}}
+rows = {}
+for p in plats:
+    ns = f"boutique-{p}"
+    cpu_e = (f'avg_over_time((sum(rate(container_cpu_usage_seconds_total'
+             f'{{namespace="{ns}",container!="",container!="POD"}}[2m])))[{RANGE}:])')
+    mem_e = (f'avg_over_time((sum(container_memory_working_set_bytes'
+             f'{{namespace="{ns}",container!="",container!="POD"}}))[{RANGE}:])')
+    snap["cpu"][p] = q_inst(cpu_e)
+    snap["mem"][p] = q_inst(mem_e)
+    for ts, val in (q_range(f'sum(rate(container_cpu_usage_seconds_total'
+                            f'{{namespace="{ns}",container!="",container!="POD"}}[2m]))', 15, 30) or [{}])[0].get("values", []):
+        rows.setdefault(int(ts), {})[p] = val
 
-Identical synthetic load (Locust: USERS=10, RATE=1) applied to both copies;
-metrics averaged over the last ${RANGE} of steady state.
+json.dump(snap, open(f"{RESULTS}/metrics-snapshot.json", "w"), indent=2)
+with open(f"{RESULTS}/cpu_timeseries.csv", "w", newline="") as f:
+    w = csv.writer(f); w.writerow(["timestamp"] + [f"{p}_cpu_cores" for p in plats])
+    for ts in sorted(rows):
+        w.writerow([ts] + [rows[ts].get(p, "") for p in plats])
+print("snapshot:", {p: round(snap["cpu"][p], 4) for p in plats})
+PY
 
-| Metric (workload total) | N2 (prev-gen Intel) | C3 (Sapphire Rapids) | C3 vs N2 |
-|---|---|---|---|
-| CPU cores consumed | ${CPU_N2} | ${CPU_C3} | ${CPU_DELTA}% lower |
-| Memory working set (bytes) | ${MEM_N2} | ${MEM_C3} | ${MEM_DELTA}% lower |
+echo "==> Capturing loadgenerator (Locust) stats..."
+for p in $SELECTED; do
+  kubectl logs -n "boutique-${p}" deploy/loadgenerator -c main --tail=60 \
+    > "${RESULTS}/loadgen-${p}.log" 2>/dev/null || true
+done
 
-Throughput/latency per pool: see loadgen-n2.log / loadgen-c3.log (Locust aggregates).
-
-Interpretation: at the same offered load, lower CPU cores indicates a more
-efficient processor for this workload. Pair with Locust latency to confirm both
-served the load comparably.
-EOF
-
-echo "==> Wrote ${RESULTS}/summary.md"
-cat "${RESULTS}/summary.md"
-
-# Render comparison charts if matplotlib is available (optional, non-fatal).
-if python3 -c "import matplotlib" >/dev/null 2>&1; then
-  echo "==> Rendering comparison charts"
-  python3 "${REPO_ROOT}/scripts/make-charts.py" || true
-else
-  echo "==> matplotlib not installed; skipping charts (run 'make charts' later)"
-fi
+echo "==> Rendering summary + charts"
+python3 "${REPO_ROOT}/scripts/make-charts.py" || true
+python3 - "$RESULTS" <<'PY'
+import json, sys
+R = sys.argv[1]
+s = json.load(open(f"{R}/metrics-snapshot.json"))
+p = s["platforms"]
+rows = "\n".join(
+    f"| {k} ({s['labels'][k]}) | {s['cpu'][k]:.4f} | {s['mem'][k]/1048576:.0f} |"
+    for k in p)
+open(f"{R}/summary.md", "w").write(
+    f"# Benchmark summary — {p[0]} vs {p[1]}\n\n"
+    f"Identical Locust load (USERS=10, RATE=1) on both copies.\n\n"
+    f"| Platform | CPU cores | Memory (MiB) |\n|---|---|---|\n{rows}\n\n"
+    f"See chart-*.png and loadgen-*.log for latency/throughput.\n")
+print(open(f"{R}/summary.md").read())
+PY

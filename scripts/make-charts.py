@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
-"""Render N2-vs-C3 comparison charts from captured benchmark evidence.
+"""Render a 2-way processor comparison from captured benchmark evidence.
 
-Reads:  docs/results/metrics-snapshot.json   (cpu_n2/cpu_c3/mem_n2/mem_c3)
-        docs/results/loadgen-n2.log / loadgen-c3.log  (Locust 'Aggregated' line)
+Platform-agnostic: reads the selected platforms from the metrics snapshot
+(produced by run-benchmark.sh), so it works for whichever 2 platforms were
+chosen in config/platforms.json.
+
+Reads:  docs/results/metrics-snapshot.json
+          { "platforms": ["n2","c3"],
+            "labels": {"n2":"Intel ...","c3":"Intel ..."},
+            "cpu": {"n2":0.06,"c3":0.04}, "mem": {"n2":..,"c3":..} }
+        docs/results/loadgen-<key>.log   (Locust 'Aggregated' line)
 Writes: docs/results/chart-cpu.png, chart-cpu-per-req.png, chart-latency.png,
         chart-memory.png
 
-Pure stdlib + matplotlib. Safe to run anywhere matplotlib is installed.
+Pure stdlib + matplotlib.
 """
 import json
 import os
-import re
 import sys
 
 import matplotlib
@@ -19,13 +25,10 @@ import matplotlib.pyplot as plt
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RESULTS = os.path.join(ROOT, "docs", "results")
-
-N2_COLOR, C3_COLOR = "#5b8def", "#34a853"  # blue (prev-gen), green (new-gen)
-LABELS = ["N2\n(prev-gen Intel)", "C3\n(Sapphire Rapids)"]
+PALETTE = ["#5b8def", "#34a853", "#f9ab00", "#a142f4"]  # up to 4 platforms
 
 
 def parse_loadgen(path):
-    """Return dict with reqs, avg, median, rps from the Locust Aggregated line."""
     if not os.path.exists(path):
         return None
     agg = None
@@ -35,23 +38,23 @@ def parse_loadgen(path):
                 agg = line
     if not agg:
         return None
-    toks = [t for t in agg.replace("|", " ").split() if t]
-    # Aggregated reqs fails(%) avg min max med ... rps fails/s
+    t = [x for x in agg.replace("|", " ").split() if x]
     try:
-        return {"reqs": float(toks[1]), "avg": float(toks[3]),
-                "median": float(toks[6]), "rps": float(toks[-2])}
+        return {"reqs": float(t[1]), "avg": float(t[3]), "median": float(t[6]),
+                "rps": float(t[-2])}
     except (IndexError, ValueError):
         return None
 
 
-def bar(ax, values, title, ylabel, fmt="{:.3f}"):
-    bars = ax.bar(LABELS, values, color=[N2_COLOR, C3_COLOR], width=0.55)
+def bars(ax, plats, values, title, ylabel, fmt="{:.3f}"):
+    ticks = [f"{p}\n({LABELS.get(p, '')})" for p in plats]
+    b = ax.bar(ticks, values, color=PALETTE[:len(plats)], width=0.55)
     ax.set_title(title, fontweight="bold")
     ax.set_ylabel(ylabel)
     ax.spines[["top", "right"]].set_visible(False)
     top = max(values) if max(values) else 1
-    for b, v in zip(bars, values):
-        ax.text(b.get_x() + b.get_width() / 2, v + top * 0.02, fmt.format(v),
+    for bar, v in zip(b, values):
+        ax.text(bar.get_x() + bar.get_width() / 2, v + top * 0.02, fmt.format(v),
                 ha="center", va="bottom", fontweight="bold")
     ax.set_ylim(0, top * 1.18)
 
@@ -64,8 +67,14 @@ def save(fig, name):
     print("wrote", os.path.relpath(out, ROOT))
 
 
-def pct(n2, c3):
-    return f"C3 {(n2 - c3) / n2 * 100:.0f}% lower" if n2 else ""
+def delta(plats, vals):
+    """Headline: lowest vs highest, lower-is-better."""
+    lo_i = min(range(len(vals)), key=lambda i: vals[i])
+    hi_i = max(range(len(vals)), key=lambda i: vals[i])
+    if vals[hi_i] == 0:
+        return ""
+    pc = (vals[hi_i] - vals[lo_i]) / vals[hi_i] * 100
+    return f"{plats[lo_i]} {pc:.0f}% lower"
 
 
 def main():
@@ -74,40 +83,40 @@ def main():
         print("no metrics-snapshot.json — run the benchmark first", file=sys.stderr)
         return 1
     s = json.load(open(snap_path))
-    n2, c3 = parse_loadgen(os.path.join(RESULTS, "loadgen-n2.log")), \
-        parse_loadgen(os.path.join(RESULTS, "loadgen-c3.log"))
+    plats = s["platforms"]
+    global LABELS
+    LABELS = s.get("labels", {})
+    lg = {p: parse_loadgen(os.path.join(RESULTS, f"loadgen-{p}.log")) for p in plats}
 
     # 1) CPU cores
+    cpu = [s["cpu"][p] for p in plats]
     fig, ax = plt.subplots(figsize=(6, 4.2))
-    bar(ax, [s["cpu_n2"], s["cpu_c3"]],
-        f"Workload CPU cores at identical load  ({pct(s['cpu_n2'], s['cpu_c3'])})",
-        "CPU cores (lower = better)")
+    bars(ax, plats, cpu, f"Workload CPU cores at identical load  ({delta(plats, cpu)})",
+         "CPU cores (lower = better)")
     save(fig, "chart-cpu.png")
 
     # 2) Memory MiB
+    mem = [s["mem"][p] / 1048576 for p in plats]
     fig, ax = plt.subplots(figsize=(6, 4.2))
-    bar(ax, [s["mem_n2"] / 1048576, s["mem_c3"] / 1048576],
-        "Workload memory working set", "MiB", fmt="{:.0f}")
+    bars(ax, plats, mem, "Workload memory working set", "MiB", fmt="{:.0f}")
     save(fig, "chart-memory.png")
 
-    # 3) CPU per request (efficiency headline) — needs loadgen rps
-    if n2 and c3 and n2["rps"] and c3["rps"]:
-        cpr = [s["cpu_n2"] / n2["rps"], s["cpu_c3"] / c3["rps"]]
+    # 3) CPU per request + 4) latency (need loadgen rps/latency)
+    if all(lg[p] and lg[p]["rps"] for p in plats):
+        cpr = [s["cpu"][p] / lg[p]["rps"] for p in plats]
         fig, ax = plt.subplots(figsize=(6, 4.2))
-        bar(ax, cpr,
-            f"CPU-seconds per request  ({pct(cpr[0], cpr[1])})",
-            "core-seconds / request (lower = better)", fmt="{:.4f}")
+        bars(ax, plats, cpr, f"CPU-seconds per request  ({delta(plats, cpr)})",
+             "core-seconds / request (lower = better)", fmt="{:.4f}")
         save(fig, "chart-cpu-per-req.png")
 
-        # 4) Latency (avg + median grouped)
         fig, ax = plt.subplots(figsize=(6, 4.2))
-        x = range(2)
-        ax.bar([i - 0.2 for i in x], [n2["avg"], c3["avg"]], width=0.4,
-               label="avg", color=[N2_COLOR, C3_COLOR])
-        ax.bar([i + 0.2 for i in x], [n2["median"], c3["median"]], width=0.4,
-               label="median", color=[N2_COLOR, C3_COLOR], alpha=0.55)
+        x = range(len(plats))
+        ax.bar([i - 0.2 for i in x], [lg[p]["avg"] for p in plats], width=0.4,
+               label="avg", color=PALETTE[:len(plats)])
+        ax.bar([i + 0.2 for i in x], [lg[p]["median"] for p in plats], width=0.4,
+               label="median", color=PALETTE[:len(plats)], alpha=0.55)
         ax.set_xticks(list(x))
-        ax.set_xticklabels(LABELS)
+        ax.set_xticklabels([f"{p}\n({LABELS.get(p, '')})" for p in plats])
         ax.set_ylabel("latency (ms, lower = better)")
         ax.set_title("Request latency", fontweight="bold")
         ax.spines[["top", "right"]].set_visible(False)
@@ -119,4 +128,5 @@ def main():
 
 
 if __name__ == "__main__":
+    LABELS = {}
     sys.exit(main())

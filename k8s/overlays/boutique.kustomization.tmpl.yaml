@@ -1,0 +1,36 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# TEMPLATE — not applied directly. scripts/deploy.sh renders one copy per
+# selected platform into a temp dir UNDER k8s/overlays/ (so the relative
+# ../../base path below resolves), substituting:
+#   __NS__   -> boutique-<key>   (e.g. boutique-n2)
+#   __PROC__ -> <key>            (e.g. n2; matches node label proc=<key>)
+# then runs `kubectl apply -k <temp dir>`. The namespace itself is created by
+# deploy.sh (kustomize sets metadata.namespace but does not create the Namespace).
+namespace: __NS__
+
+resources:
+  - ../../base
+
+commonLabels:
+  proc: __PROC__
+
+patches:
+  # Pin every workload to the selected processor pool via the node label.
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/nodeSelector
+        value:
+          proc: __PROC__
+
+  # Drop the external LoadBalancer Service (load comes from the in-cluster
+  # loadgenerator; smoke tests use the in-cluster health check / port-forward).
+  - patch: |-
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: frontend-external
+      $patch: delete

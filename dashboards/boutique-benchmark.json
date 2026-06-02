@@ -2,7 +2,7 @@
   "annotations": { "list": [] },
   "editable": true,
   "graphTooltip": 1,
-  "title": "Online Boutique — Processor Benchmark (N2 vs C3)",
+  "title": "Online Boutique — Processor Benchmark (2-way)",
   "uid": "boutique-bench",
   "tags": ["benchmark", "processors", "online-boutique"],
   "time": { "from": "now-30m", "to": "now" },
@@ -65,17 +65,10 @@
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
       "targets": [
         {
-          "refId": "N2",
+          "refId": "A",
           "datasource": { "type": "prometheus", "uid": "gmp" },
-          "expr": "avg_over_time((sum(rate(container_cpu_usage_seconds_total{namespace=\"boutique-n2\", container!=\"\", container!=\"POD\"}[2m])))[$__range:])",
-          "legendFormat": "N2 (prev-gen Intel)",
-          "instant": true
-        },
-        {
-          "refId": "C3",
-          "datasource": { "type": "prometheus", "uid": "gmp" },
-          "expr": "avg_over_time((sum(rate(container_cpu_usage_seconds_total{namespace=\"boutique-c3\", container!=\"\", container!=\"POD\"}[2m])))[$__range:])",
-          "legendFormat": "C3 (Sapphire Rapids)",
+          "expr": "avg_over_time((sum by (namespace) (rate(container_cpu_usage_seconds_total{namespace=~\"boutique-.*\", container!=\"\", container!=\"POD\"}[2m])))[$__range:])",
+          "legendFormat": "{{namespace}}",
           "instant": true
         }
       ]

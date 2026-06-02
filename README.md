@@ -39,30 +39,49 @@ N2, with ~30% lower median latency and equal memory. Charts + details:
 - A versioned **GCS bucket** for Terraform state (default `performance-analysis-2026-tfstate`);
   update `terraform/versions.tf` to your bucket.
 
+## Choose the 2 processors to compare
+
+The comparison is parametrized in **[`config/platforms.json`](config/platforms.json)** — the single
+source of truth read by both Terraform and the scripts. Edit `selected` (exactly **2** distinct keys
+from `catalog`); any other value **fails** `make lint` and `terraform plan`.
+
+```json
+"catalog": { "n2": ..., "n2d": ..., "c3": ..., "c3d": ..., "c4": ... },
+"selected": ["n2", "c3"]
+```
+Supported x86 families: `n2` (Intel Cascade/Ice Lake), `n2d` (AMD Milan), `c3` (Intel Sapphire
+Rapids), `c3d` (AMD Genoa), `c4` (Intel Emerald Rapids). Everything downstream — node pools, the two
+Online Boutique copies, dashboard, benchmark and charts — follows automatically.
+
 ## Quick start
 
 ```bash
-make up         # terraform apply: VPC + GKE + node pools (~8 min)
+make lint       # static checks: terraform fmt/validate, config, yamllint, shellcheck, kustomize
+make up         # terraform apply: VPC + GKE + the 2 selected node pools (~8 min)
 make connect    # fetch kubeconfig
-make deploy     # GMP scraping + frontend + Grafana + both Online Boutique copies
+make deploy     # GMP scraping + frontend + Grafana + both copies, then health checks
+make health     # re-run functional health checks on demand
 make dashboards # port-forward Grafana -> http://localhost:3000 (anon viewer; admin/admin)
-make bench      # soak + capture evidence to docs/results/
+make bench      # soak + capture evidence + charts to docs/results/
 make down       # terraform destroy (tear down to control cost)
 ```
 
-CI/CD equivalents live in [`cloudbuild/`](cloudbuild) (`provision.yaml`, `teardown.yaml`).
+CI/CD: `.github/workflows/ci.yml` runs `make lint` on push/PR; `cloudbuild/provision.yaml` /
+`teardown.yaml` call the **same scripts** as `make` (single source of truth — no duplicated logic).
 
 ## Layout
 
 ```
-terraform/    IaC: VPC, GKE cluster, pool-n2 / pool-c3, GMP, remote state
-k8s/base      vendored Online Boutique (pinned v0.10.5)
-k8s/overlays  boutique-n2 / boutique-c3 (namespace + nodeSelector per processor)
+config/        platforms.json — catalog + the 2 selected processors (single source of truth)
+terraform/     IaC: VPC, GKE cluster, node pools (from config), GMP, Workload Identity, state
+k8s/base       vendored Online Boutique (pinned v0.10.5)
+k8s/overlays   boutique.kustomization.tmpl.yaml — rendered per selected platform by deploy.sh
 k8s/monitoring OperatorConfig (kubelet scraping), GMP query frontend, Grafana
-dashboards/   Grafana dashboard JSON (provisioned)
-cloudbuild/   Cloud Build pipelines
-scripts/      connect / deploy / run-benchmark / teardown
-docs/         architecture doc, diagram, results/
+dashboards/    Grafana dashboard JSON (provisioned; groups by namespace)
+cloudbuild/    Cloud Build pipelines (call scripts/)
+scripts/       apply-infra · deploy · healthcheck · validate · run-benchmark · make-charts · lib
+.github/       GitHub Actions CI (lint/validate)
+docs/          architecture doc, diagram, results/
 ```
 
 ## Security model

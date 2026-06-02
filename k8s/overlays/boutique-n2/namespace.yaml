@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: boutique-n2
-  labels:
-    benchmark: online-boutique
-    proc: n2

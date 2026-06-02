@@ -16,3 +16,6 @@ gha-creds-*.json
 # OS / editor
 .DS_Store
 *.swp
+
+# Rendered overlay temp dirs (deploy.sh)
+k8s/overlays/.render.*

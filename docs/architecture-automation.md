@@ -78,20 +78,38 @@ flowchart TB
 > (not whole-node utilization), this does not bias the efficiency comparison. For a publication-
 > grade run, add a dedicated untainted `system` pool and taint the benchmark pools.
 
+## Parametrization, validation & health
+
+- **Parametrized processors.** `config/platforms.json` (catalog + the 2 `selected` keys) is the
+  single source of truth, read by **both** Terraform (`jsondecode`) and the shell scripts
+  (`python3`). Terraform derives the node pools from it and a `terraform_data.platform_guard`
+  **precondition hard-fails** `plan`/`apply` unless `selected` is exactly 2 distinct catalog keys.
+  The two app copies, dashboard, benchmark and charts all follow the selection automatically.
+- **Validation/CI.** `scripts/validate.sh` (= `make lint`) runs `terraform fmt`/`validate`, a config
+  sanity check, `yamllint`, `shellcheck`, and a `kustomize build`; `.github/workflows/ci.yml` runs it
+  on push/PR.
+- **Functional health checks.** `scripts/healthcheck.sh` (= `make health`, also the tail of
+  `deploy.sh`) verifies Ready nodes per pool, Available deployments, **frontend HTTP 200**, **metrics
+  actually flowing** in GMP, and Grafana data-source health — non-zero on any failure, so it gates
+  both `make deploy` and Cloud Build.
+- **No duplicated logic.** `make` and `cloudbuild/provision.yaml` both call the same
+  `scripts/{apply-infra,deploy,healthcheck}.sh` — one place to maintain.
+
 ## Repository layout
 
 ```
-terraform/   IaC: VPC, GKE cluster, pool-n2 / pool-c3, GMP, remote state
+config/      platforms.json — catalog + the 2 selected processors (single source of truth)
+terraform/   IaC: VPC, GKE cluster, node pools (derived from config), GMP, WI, remote state
 k8s/
   base/                 vendored Online Boutique (pinned v0.10.5)
-  overlays/boutique-n2  namespace + nodeSelector(proc=n2), drops frontend-external LB
-  overlays/boutique-c3  namespace + nodeSelector(proc=c3)
-  monitoring/           OperatorConfig (ref), GMP frontend, Grafana
-dashboards/  Grafana dashboard JSON (provisioned)
-cloudbuild/  provision.yaml, teardown.yaml
-scripts/     connect.sh, deploy.sh, run-benchmark.sh, teardown.sh
+  overlays/boutique.kustomization.tmpl.yaml   rendered per selected platform by deploy.sh
+  monitoring/           OperatorConfig (ref), GMP frontend (WI), Grafana
+dashboards/  Grafana dashboard JSON (provisioned; groups by namespace)
+cloudbuild/  provision.yaml, teardown.yaml  (call scripts/)
+scripts/     apply-infra · deploy · healthcheck · validate · run-benchmark · make-charts · lib · connect · teardown
+.github/     GitHub Actions CI (make lint)
 docs/        this doc, automation-diagram.mmd, results/
-Makefile     up / connect / deploy / dashboards / bench / down
+Makefile     lint / up / connect / deploy / health / dashboards / bench / charts / down
 ```
 
 ## How to run

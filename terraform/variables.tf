@@ -22,25 +22,9 @@ variable "cluster_name" {
   default     = "boutique-bench"
 }
 
-# --- Node pools under test: previous-gen vs new-gen Intel ---
-# Both *-standard-4 (4 vCPU / 16 GB) so the comparison is processor-generation, not sizing.
-variable "pools" {
-  description = "Map of node pools keyed by processor label."
-  type = map(object({
-    machine_type = string
-    proc_label   = string
-  }))
-  default = {
-    n2 = {
-      machine_type = "n2-standard-4" # Intel Cascade Lake / Ice Lake (previous gen)
-      proc_label   = "n2"
-    }
-    c3 = {
-      machine_type = "c3-standard-4" # Intel Sapphire Rapids (new gen)
-      proc_label   = "c3"
-    }
-  }
-}
+# Node pools under test are NOT defined here — they are derived from
+# config/platforms.json (the single source of truth, also read by the shell
+# scripts). See locals.tf for the catalog/selection and the validation guard.
 
 variable "pool_min_nodes" {
   description = "Min nodes per pool (autoscaling)."

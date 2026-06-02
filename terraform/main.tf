@@ -80,7 +80,7 @@ resource "google_container_cluster" "primary" {
 # One node pool per processor generation under test (N2 vs C3)
 # ---------------------------------------------------------------------------
 resource "google_container_node_pool" "pools" {
-  for_each = var.pools
+  for_each = local.pools
 
   name     = "pool-${each.key}"
   location = var.zone

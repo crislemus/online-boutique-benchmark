@@ -15,5 +15,10 @@ output "get_credentials_command" {
 
 output "node_pools" {
   description = "Node pools and the processor family each pins."
-  value       = { for k, v in var.pools : "pool-${k}" => v.machine_type }
+  value       = { for k, v in local.pools : "pool-${k}" => v.machine_type }
+}
+
+output "selected_platforms" {
+  description = "The 2 platform keys under comparison (from config/platforms.json)."
+  value       = local.selected
 }
