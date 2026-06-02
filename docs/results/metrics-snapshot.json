@@ -1,15 +1,18 @@
 {
-  "platforms": ["n2", "c3"],
+  "platforms": [
+    "c3",
+    "c4"
+  ],
   "labels": {
-    "n2": "Intel Cascade/Ice Lake",
-    "c3": "Intel Sapphire Rapids"
+    "c3": "Intel Sapphire Rapids",
+    "c4": "Intel Emerald Rapids"
   },
   "cpu": {
-    "n2": 0.06136902823525,
-    "c3": 0.04674213844408333
+    "c3": 0.0414846415565,
+    "c4": 0.03787920742611111
   },
   "mem": {
-    "n2": 349940940.8,
-    "c3": 345837977.6
+    "c3": 351551897.6,
+    "c4": 351429836.8
   }
 }

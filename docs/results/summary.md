@@ -1,45 +1,33 @@
-# Benchmark results — Online Boutique on N2 vs C3
+# Benchmark summary — c3 vs c4 (Intel Sapphire Rapids vs Emerald Rapids)
 
-**Setup:** two identical copies of Online Boutique (v0.10.5), one pinned to each node pool, each
-driven by its own Locust loadgenerator with identical config (`USERS=10, RATE=1`). Metrics from
-Managed Service for Prometheus (kubelet/cAdvisor); latency/throughput from Locust. Captured
-2026-05-31 on GKE `boutique-bench`, `us-central1-a`, on the **Workload-Identity-hardened** cluster
-(dedicated `gke-node-sa`; Grafana reads via the `gmp-reader` GSA). PoC snapshot (~10 min soak).
+Identical Locust load (USERS=10, RATE=1) on both copies; CPU/memory averaged over a ~10-min
+steady-state window (Managed Service for Prometheus); latency/throughput from Locust. Captured on
+the Workload-Identity-hardened GKE cluster (`boutique-bench`, `us-central1-a`); c4 on
+hyperdisk-balanced, c3 on pd-balanced.
 
-| Metric (workload total) | N2 (Cascade/Ice Lake) | C3 (Sapphire Rapids) | C3 vs N2 |
+| Metric (workload total) | c3 (Sapphire Rapids) | c4 (Emerald Rapids) | c4 vs c3 |
 |---|---|---|---|
-| **CPU cores consumed** (10 m avg) | 0.0614 | 0.0467 | **~24% lower** |
-| Memory working set | 334 MiB | 330 MiB | ~1% lower (≈ equal) |
-| Throughput (Locust, cum. avg) | 2.6 req/s | 2.4 req/s | comparable |
-| Median latency | 13 ms | 9 ms | ~31% lower |
-| Avg latency | 15 ms | 11 ms | ~27% lower |
-| Requests served / failures | 1543 / 0% | 1466 / 0% | both clean |
-| **CPU per request** (cores ÷ req/s) | 0.0236 | 0.0195 | **~17% lower** |
+| **CPU cores consumed** | 0.0415 | 0.0379 | **~9% lower** |
+| Memory working set | 335 MiB | 335 MiB | ~equal |
+| Median latency | 9 ms | 8 ms | ~lower |
+| Avg latency | 11 ms | 9 ms | ~lower |
+| Requests served / failures | 1663 / 0% | 1759 / 0% | both clean |
 
 ## Interpretation
 
-At the same offered load, **C3 (new-gen Sapphire Rapids) consumed ~24% less CPU and served
-requests at notably lower latency** than N2 (previous-gen), with equal memory and zero errors.
-Normalized as CPU-seconds per request — the cleanest processor-efficiency measure — **C3 is ~17%
-more efficient** for this workload. The result direction matched Iteration 1 (run-to-run the CPU
-delta sampled ~17–27%).
-
-## Charts (matplotlib)
-- `chart-cpu.png` — workload CPU cores, N2 vs C3.
-- `chart-cpu-per-req.png` — CPU-seconds per request (the efficiency headline).
-- `chart-latency.png` — avg/median request latency.
-- `chart-memory.png` — memory working set.
-
-## Raw evidence
-- `metrics-snapshot.json` — averaged CPU/memory values.
-- `cpu_timeseries.csv` — per-30s CPU cores for both pools over the capture window.
-- `loadgen-n2.log`, `loadgen-c3.log` — Locust aggregates.
-- Live dashboard: `dashboards/boutique-benchmark.json` (Grafana → `make dashboards`).
+At identical load, **c4 (newest-gen Intel Emerald Rapids) consumed ~9% less CPU than c3 (Sapphire
+Rapids)** with slightly lower latency and equal memory — a modest, plausible generational gain
+between two *adjacent, same-vendor* Intel families (a smaller delta than the cross-generation
+n2→c3 jump, as expected).
 
 ## Caveats (honest scope)
-- PoC snapshot, single run, light load; not publication-grade. For rigor: multiple averaged runs,
-  longer soak, a dedicated isolated `system` pool, a fixed-RPS load tool (k6/Fortio), and identical
-  pinned image digests.
-- Locust throughput is user-driven (think-time), so req/s is approximate; CPU-per-request is the
-  more reliable comparison than raw throughput.
-- The **direction** (C3 more efficient, lower latency) was consistent across all windows sampled.
+- PoC snapshot, single ~10-min run, light load. The ~9% CPU delta is real in this sample but close
+  enough to run-to-run noise that it should be read as **indicative**, not definitive — average
+  several runs for a firm number.
+- Locust throughput is user-driven (think-time), so instantaneous req/s is noisy; here the
+  **CPU and latency** are the more reliable signals (the derived CPU-per-request chart is sensitive
+  to that rps noise on such a small margin).
+
+## Artifacts
+- `chart-cpu.png`, `chart-memory.png`, `chart-latency.png`, `chart-cpu-per-req.png`
+- `metrics-snapshot.json`, `cpu_timeseries.csv`, `loadgen-c3.log`, `loadgen-c4.log`
