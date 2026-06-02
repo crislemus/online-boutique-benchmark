@@ -36,8 +36,15 @@ retry() {
 }
 
 sec "1. Ready nodes per selected pool"
+# A pool's node may not be registered yet right after provisioning; `kubectl wait`
+# fast-fails on 0 matching resources, so retry until the node exists AND is Ready.
+node_ready() {
+  local p=$1
+  kubectl get nodes -l "proc=${p}" -o name 2>/dev/null | grep -q . || return 1
+  kubectl wait --for=condition=Ready node -l "proc=${p}" --timeout=15s >/dev/null 2>&1
+}
 for p in $SELECTED; do
-  if kubectl wait --for=condition=Ready node -l "proc=${p}" --timeout=180s >/dev/null 2>&1; then
+  if retry 300 10 "Ready node proc=${p}" node_ready "$p"; then
     grn "node proc=${p} Ready"
   else
     red "no Ready node for proc=${p}"

@@ -15,10 +15,21 @@ cd "$REPO_ROOT" || exit 1
 SELECTED="$(platforms_selected)"
 echo "==> Selected platforms: ${SELECTED}"
 
+echo "==> Waiting for the Managed Service for Prometheus operator to be ready"
+# Right after cluster creation the gmp-operator (and its validating webhook) may
+# not be up yet, which makes the OperatorConfig patch fail. Wait, then retry.
+kubectl -n gmp-system rollout status deploy/gmp-operator --timeout=300s || true
+
 echo "==> Enabling kubelet/cAdvisor scraping in Managed Service for Prometheus"
 # OperatorConfig is an addon-managed singleton; patch it (see 10-operatorconfig.yaml).
-kubectl -n gmp-public patch operatorconfig config --type=merge \
-  -p '{"collection":{"kubeletScraping":{"interval":"30s"}}}'
+for attempt in $(seq 1 12); do
+  if kubectl -n gmp-public patch operatorconfig config --type=merge \
+       -p '{"collection":{"kubeletScraping":{"interval":"30s"}}}' 2>/dev/null; then
+    break
+  fi
+  echo "    operator webhook not ready yet (attempt ${attempt}/12); retrying in 10s..."
+  sleep 10
+done
 
 echo "==> Deploying observability stack (GMP frontend + Grafana)"
 kubectl apply -f k8s/monitoring/00-namespace.yaml
