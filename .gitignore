@@ -19,3 +19,7 @@ gha-creds-*.json
 
 # Rendered overlay temp dirs (deploy.sh)
 k8s/overlays/.render.*
+
+# Local env files (never commit)
+*.env
+secrets.env
