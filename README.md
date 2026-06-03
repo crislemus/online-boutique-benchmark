@@ -66,8 +66,26 @@ make bench      # soak + capture evidence + charts to docs/results/
 make down       # terraform destroy (tear down to control cost)
 ```
 
-CI/CD: `.github/workflows/ci.yml` runs `make lint` on push/PR; `cloudbuild/provision.yaml` /
-`teardown.yaml` call the **same scripts** as `make` (single source of truth — no duplicated logic).
+## CI/CD
+
+Real, **keyless** CI/CD via GitHub Actions + **Workload Identity Federation** (no SA keys):
+
+- **`ci.yml`** — `make lint` (terraform fmt/validate, config, yamllint, shellcheck, kustomize) on
+  every push/PR. No cloud credentials.
+- **`deploy.yml`** — on merge to `main` (or manual): `terraform plan` → **manual approval**
+  (`production` Environment) → `apply-infra.sh` → `deploy.sh` (with the health-check gate). Auth is
+  keyless OIDC, scoped to this repo only.
+- **`teardown.yml`** — manual, approval-gated `terraform destroy`.
+
+Setup (one-time bootstrap + GitHub variables/environment): see
+**[docs/cicd-setup.md](docs/cicd-setup.md)**. The pipeline calls the **same `scripts/`** as `make`
+— one source of truth, no duplicated logic.
+
+**Why GitHub Actions over Cloud Build here?** It's keyless (OIDC, no stored keys), lives where the
+code/PRs are, and is **cloud-agnostic** — matching the roadmap of comparing across cloud providers.
+The GCP-native **`cloudbuild/`** pipelines are retained as the alternative you'd choose when you
+need **private-VPC reach** (a private GKE control plane / VPC-SC) or GCP-only governance, where
+GitHub-hosted runners can't reach the control plane.
 
 ## Layout
 

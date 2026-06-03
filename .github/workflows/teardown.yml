@@ -1,0 +1,32 @@
+name: cd-teardown
+
+# Destroy all billable resources. Manual-only (workflow_dispatch) and gated by
+# the 'production' Environment, keyless via Workload Identity Federation.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_VERSION: "1.15.5"
+
+jobs:
+  teardown:
+    runs-on: ubuntu-latest
+    environment: production # <-- manual-approval gate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      - name: terraform destroy (scripts/teardown.sh)
+        run: ./scripts/teardown.sh
