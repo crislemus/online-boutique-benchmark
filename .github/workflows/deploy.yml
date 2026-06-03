@@ -1,9 +1,9 @@
 name: cd-deploy
 
 # Continuous delivery: provision infra + deploy the stack, keyless via Workload
-# Identity Federation (no service-account keys). Runs on merge to main or on
-# demand. The privileged apply/deploy is gated behind the 'production'
-# Environment (manual approval).
+# Identity Federation (no service-account keys). Runs on merge to main (uses the
+# committed config/platforms.json) or on demand with processor dropdowns. The
+# privileged apply/deploy is gated behind the 'production' Environment.
 on:
   push:
     branches: [main]
@@ -11,6 +11,17 @@ on:
       - "docs/**"
       - "**/*.md"
   workflow_dispatch:
+    inputs:
+      platform_a:
+        description: "First processor (node pool A)"
+        type: choice
+        default: c3
+        options: [n2, n2d, c3, c3d, c4]
+      platform_b:
+        description: "Second processor (node pool B)"
+        type: choice
+        default: c4
+        options: [n2, n2d, c3, c3d, c4]
 
 permissions:
   contents: read
@@ -26,6 +37,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Apply on-demand platform selection
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          A: ${{ inputs.platform_a }}
+          B: ${{ inputs.platform_b }}
+        run: ./scripts/set-platforms.sh "$A" "$B"
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
@@ -47,6 +64,12 @@ jobs:
     environment: production # <-- manual-approval gate (set a required reviewer in GitHub)
     steps:
       - uses: actions/checkout@v4
+      - name: Apply on-demand platform selection
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          A: ${{ inputs.platform_a }}
+          B: ${{ inputs.platform_b }}
+        run: ./scripts/set-platforms.sh "$A" "$B"
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}

@@ -1,9 +1,20 @@
 name: cd-teardown
 
-# Destroy all billable resources. Manual-only (workflow_dispatch) and gated by
-# the 'production' Environment, keyless via Workload Identity Federation.
+# Destroy all billable resources. Manual-only and gated by the 'production'
+# Environment, keyless via Workload Identity Federation.
+#
+# NOTE ON THE DEPLOY<->TEARDOWN "TIE": teardown takes NO platform parameters.
+# `terraform destroy` reads the shared remote state in GCS and removes exactly
+# what the deploy created — whatever processors that was. The state is the link
+# between the two independent runs, not the workflow inputs. The step below
+# reads the deployed platforms back FROM STATE purely to display/confirm them.
 on:
   workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "destroy" to confirm'
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -17,6 +28,12 @@ jobs:
     runs-on: ubuntu-latest
     environment: production # <-- manual-approval gate
     steps:
+      - name: Require explicit confirmation
+        if: ${{ inputs.confirm != 'destroy' }}
+        run: |
+          echo "::error::Type 'destroy' in the confirm input to proceed."
+          exit 1
+
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -28,5 +45,13 @@ jobs:
           project_id: ${{ vars.GCP_PROJECT }}
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Show what will be destroyed (read from Terraform state)
+        run: |
+          terraform -chdir=terraform init -input=false
+          echo "Platforms recorded in state (i.e. the deploy's parameters):"
+          terraform -chdir=terraform output -json selected_platforms 2>/dev/null \
+            || echo "(no deploy found in state — nothing to tear down)"
+
       - name: terraform destroy (scripts/teardown.sh)
         run: ./scripts/teardown.sh
