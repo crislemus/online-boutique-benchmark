@@ -57,6 +57,44 @@ git push -u origin main
 ```
 `ci.yml` runs immediately; `deploy.yml` runs on the push and waits at the `production` gate.
 
+## On-demand runs & parameters
+
+Both delivery workflows can be triggered manually from **Actions ▸ (workflow) ▸ Run workflow**.
+
+**`cd-deploy`** offers two processor dropdowns:
+
+| Input | Default | Notes |
+|---|---|---|
+| `platform_a` | `c3` | First node pool — pick from the catalog (`n2,n2d,c3,c3d,c4`) |
+| `platform_b` | `c4` | Second node pool |
+
+On dispatch, `scripts/set-platforms.sh` writes the chosen pair into `config/platforms.json` before
+plan/apply, and **validates** it (picking the same platform twice, or an unknown key, fails the run
+with a clear message). A normal **push to `main`** ignores the inputs and uses the *committed*
+`config/platforms.json`.
+
+**`cd-teardown`** takes a single `confirm` input — you must type `destroy` to proceed (a safety
+gate). It takes **no platform parameters by design**:
+
+> **Deploy ↔ teardown tie.** GitHub `workflow_dispatch` inputs are per-run; there is no native way
+> to hand the deploy's inputs to a later, separate teardown run. The link is the **Terraform remote
+> state in GCS** — `terraform destroy` reads state and removes exactly what the deploy created,
+> whatever processors that was. Teardown reads the deployed platforms *back from state* purely to
+> display them. So: deploy `n2 vs c3d` on demand → later run teardown with just `confirm: destroy`
+> → it tears down `n2`+`c3d`, because state remembers.
+
+> ⚠️ Triggering `cd-deploy` (push or on-demand) creates a **billable cluster** after approval.
+> Always follow with `cd-teardown`.
+
+## Results artifacts
+
+When `cd-deploy` is run on demand with **`run_benchmark: true`**, it runs the benchmark and uploads
+`docs/results/` (charts, `summary.md`, `metrics-snapshot.json`, CSV, loadgen logs, and an
+`index.html` navigator) as a **downloadable GitHub Actions artifact** (`Actions ▸ run ▸ Artifacts`).
+Artifacts are retained for a bounded window (`retention-days`) and each run is a few hundred KB —
+well within the free storage quota. Open `index.html` from the extracted artifact to browse a run
+(date, platforms, commit, metrics, charts).
+
 ## Security properties
 - **No keys**: short-lived credentials minted per run via OIDC; nothing long-lived stored in GitHub.
 - **Repo-scoped trust**: the WIF provider's `attribute_condition` *and* the SA binding both restrict
