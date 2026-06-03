@@ -94,3 +94,6 @@ open(f"{R}/summary.md", "w").write(
     f"See chart-*.png and loadgen-*.log for latency/throughput.\n")
 print(open(f"{R}/summary.md").read())
 PY
+
+echo "==> Building results navigator (index.html)"
+python3 "${REPO_ROOT}/scripts/make-results-index.py" || true

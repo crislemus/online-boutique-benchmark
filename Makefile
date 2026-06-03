@@ -37,6 +37,9 @@ bench: ## Run the benchmark and capture evidence to docs/results/
 charts: ## Render comparison charts (PNG) from captured results (needs matplotlib)
 	python3 scripts/make-charts.py
 
+results: ## Build the HTML results navigator (docs/results/index.html)
+	python3 scripts/make-results-index.py
+
 down: ## Destroy all billable resources
 	./scripts/teardown.sh
 
