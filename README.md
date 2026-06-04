@@ -53,6 +53,14 @@ Supported x86 families: `n2` (Intel Cascade/Ice Lake), `n2d` (AMD Milan), `c3` (
 Rapids), `c3d` (AMD Genoa), `c4` (Intel Emerald Rapids). Everything downstream — node pools, the two
 Online Boutique copies, dashboard, benchmark and charts — follows automatically.
 
+> **Processor availability is zone- and time-dependent.** A family being in the catalog means it's a
+> valid choice, not that the zone has capacity *right now*. If a node never becomes Ready and the
+> health check reports `ZONE_RESOURCE_POOL_EXHAUSTED`, that machine type is temporarily **stocked
+> out** in `us-central1-a` (a transient GCP capacity limit, not a config error). Mitigations: retry
+> later, pick another family (e.g. `n2d`/`c3d`/`c3`/`c4`), switch the zone, or use a reservation for
+> guaranteed capacity. To check a type before deploying:
+> `gcloud compute instances create probe --machine-type=<fam>-standard-4 --zone=us-central1-a ... && gcloud compute instances delete probe ...`
+
 ## Quick start
 
 ```bash

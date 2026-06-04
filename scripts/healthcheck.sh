@@ -16,6 +16,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${REPO_ROOT}/scripts/lib.sh"
 
 SELECTED="$(platforms_selected)"
+CLUSTER="${CLUSTER:-boutique-bench}"
+ZONE="${ZONE:-us-central1-a}"
 fail=0
 red() { printf '\033[31m%s\033[0m\n' "$1"; }
 grn() { printf '\033[32m%s\033[0m\n' "$1"; }
@@ -35,6 +37,33 @@ retry() {
   done
 }
 
+# When a pool's node never becomes Ready, surface the underlying cause from the
+# node pool's Managed Instance Group (e.g. ZONE_RESOURCE_POOL_EXHAUSTED = a
+# transient GCP capacity stockout) instead of a vague "node not Ready".
+diagnose_pool() {
+  local p=$1 mtype
+  command -v gcloud >/dev/null 2>&1 || return 0
+  mtype="$(platform_machine_type "$p")"
+  local igs
+  igs="$(gcloud container node-pools describe "pool-${p}" --cluster "$CLUSTER" --zone "$ZONE" \
+        --format='value(instanceGroupUrls)' 2>/dev/null | tr ';,' '\n')"
+  for ig in $igs; do
+    [ -n "$ig" ] || continue
+    local name igzone errs
+    name="$(basename "$ig")"
+    igzone="$(echo "$ig" | sed -n 's#.*/zones/\([^/]*\)/.*#\1#p')"
+    errs="$(gcloud compute instance-groups managed list-errors "$name" \
+            --zone "${igzone:-$ZONE}" --format='value(error.code,error.message)' 2>/dev/null | head -3)"
+    [ -n "$errs" ] || continue
+    red "    node provisioning error(s) for pool-${p} (${mtype}):"
+    echo "$errs" | sed 's/^/      /'
+    if echo "$errs" | grep -qiE 'RESOURCE_POOL_EXHAUSTED|does not have enough resources'; then
+      yel "    => '${mtype}' is STOCKED OUT in ${ZONE} right now (transient GCP capacity)."
+      yel "       Retry later, choose another platform (e.g. n2d/c3d/c3/c4), or use a different zone."
+    fi
+  done
+}
+
 sec "1. Ready nodes per selected pool"
 # A pool's node may not be registered yet right after provisioning; `kubectl wait`
 # fast-fails on 0 matching resources, so retry until the node exists AND is Ready.
@@ -48,6 +77,7 @@ for p in $SELECTED; do
     grn "node proc=${p} Ready"
   else
     red "no Ready node for proc=${p}"
+    diagnose_pool "$p"
     fail=1
   fi
 done

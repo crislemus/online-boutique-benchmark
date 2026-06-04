@@ -86,6 +86,12 @@ gate). It takes **no platform parameters by design**:
 > ⚠️ Triggering `cd-deploy` (push or on-demand) creates a **billable cluster** after approval.
 > Always follow with `cd-teardown`.
 
+**Troubleshooting a failed deploy:** if `deploy` fails at the health-check step with
+`no Ready node for proc=<x>`, the health check now prints the node pool's provisioning error. A
+`ZONE_RESOURCE_POOL_EXHAUSTED` means that machine type is temporarily **stocked out** in the zone
+(transient GCP capacity, not a config error) — re-run with a different `platform_*` (e.g.
+`n2d`/`c3d`/`c3`/`c4`) or try later. See the README "Processor availability" note.
+
 ## Results artifacts
 
 When `cd-deploy` is run on demand with **`run_benchmark: true`**, it runs the benchmark and uploads
