@@ -21,6 +21,7 @@ ZONE="${ZONE:-us-central1-a}"
 fail=0
 red() { printf '\033[31m%s\033[0m\n' "$1"; }
 grn() { printf '\033[32m%s\033[0m\n' "$1"; }
+yel() { printf '\033[33m%s\033[0m\n' "$1"; }
 sec() { printf '\n=== %s ===\n' "$1"; }
 
 # retry <timeout_s> <interval_s> <desc> <cmd...>
