@@ -22,7 +22,7 @@ missing() { if [ "$STRICT" = "1" ]; then red "MISSING required tool: $1"; fail=1
 sec "terraform fmt + validate"
 if command -v terraform >/dev/null 2>&1; then
   terraform -chdir=terraform fmt -check -recursive && grn "fmt ok" || { red "terraform fmt: run 'terraform fmt'"; fail=1; }
-  for d in terraform terraform/bootstrap; do
+  for d in terraform terraform/bootstrap terraform/results-history; do
     terraform -chdir="$d" init -backend=false -input=false >/dev/null 2>&1 \
       && terraform -chdir="$d" validate >/dev/null && grn "validate ok: $d" || { red "terraform validate failed: $d"; fail=1; }
   done
