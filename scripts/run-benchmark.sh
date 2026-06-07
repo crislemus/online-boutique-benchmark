@@ -97,3 +97,6 @@ PY
 
 echo "==> Building results navigator (index.html)"
 python3 "${REPO_ROOT}/scripts/make-results-index.py" || true
+
+echo "==> Publishing run to the durable results-history bucket"
+"${REPO_ROOT}/scripts/publish-results.sh" || true

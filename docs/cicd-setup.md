@@ -101,6 +101,14 @@ Artifacts are retained for a bounded window (`retention-days`) and each run is a
 well within the free storage quota. Open `index.html` from the extracted artifact to browse a run
 (date, platforms, commit, metrics, charts).
 
+**Durable history (GCS).** Beyond the per-run GitHub artifact, every benchmark also publishes to a
+**persistent results-history bucket** (`scripts/publish-results.sh`, wired into `run-benchmark.sh`)
+at `gs://performance-analysis-2026-benchmark-results/runs/<pair>/<ts>__<commit>__<run-id>/`, with a
+`manifest.json` (commit, platforms, zone, trigger, actor + headline metrics). This is the
+system-of-record the ops AI agent reads for **trend/regression analysis** across runs. The bucket
+has its own lifecycle in [`terraform/results-history/`](../terraform/results-history) (created with
+`make create`) and survives cluster teardowns.
+
 ## Security properties
 - **No keys**: short-lived credentials minted per run via OIDC; nothing long-lived stored in GitHub.
 - **Repo-scoped trust**: the WIF provider's `attribute_condition` *and* the SA binding both restrict
