@@ -1,15 +1,11 @@
 name: cd-deploy
 
 # Continuous delivery: provision infra + deploy the stack, keyless via Workload
-# Identity Federation (no service-account keys). Runs on merge to main (uses the
-# committed config/platforms.json) or on demand with processor dropdowns. The
-# privileged apply/deploy is gated behind the 'production' Environment.
+# Identity Federation (no service-account keys). MANUAL ONLY (workflow_dispatch)
+# with processor dropdowns — commits never auto-deploy. Linting still runs on
+# every push via ci.yml, so you know the code is deploy-ready before you trigger
+# this. The privileged apply/deploy is gated behind the 'production' Environment.
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "docs/**"
-      - "**/*.md"
   workflow_dispatch:
     inputs:
       platform_a:
