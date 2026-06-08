@@ -9,6 +9,56 @@ and (later) other cloud providers.
 > Deliverable #1 of a two-part exercise. The AI-agent design is in the companion repo
 > [`ops-ai-agent`](../ops-ai-agent).
 
+## Deliverables (requirement → location)
+
+| Brief requirement | Where |
+|---|---|
+| **Online Boutique deployed** | `k8s/overlays/` + [`scripts/deploy.sh`](scripts/deploy.sh) — two copies, one per processor |
+| **Metrics collected + dashboard** | Managed Service for Prometheus + Grafana → [`dashboards/boutique-benchmark.json`](dashboards/boutique-benchmark.json) (CPU & memory) |
+| **Architecture diagram (automation)** | **below** · [`docs/automation-diagram.mmd`](docs/automation-diagram.mmd) · [`docs/architecture-automation.md`](docs/architecture-automation.md) |
+| **Automation implemented** | Terraform (`terraform/`) + `scripts/` + keyless GitHub Actions CI/CD (`.github/workflows/`) |
+| **AI agent architecture document** | companion repo → [`ops-ai-agent/docs/ai-agent-architecture.md`](../ops-ai-agent/docs/ai-agent-architecture.md) |
+
+## Architecture diagram (automation proposal)
+
+```mermaid
+flowchart TB
+    subgraph Dev["Engineer / CI"]
+        TF["Terraform<br/>(IaC: VPC, GKE, node pools, GMP, Workload Identity)"]
+        CICD["GitHub Actions (keyless WIF)<br/>+ Cloud Build (alt) — call the same scripts"]
+        MK["Makefile / scripts<br/>(local one-command parity)"]
+    end
+    GCS["GCS: Terraform state + durable results-history bucket"]
+    TF --- GCS
+    subgraph GKE["GKE Standard cluster (VPC-native, Workload Identity)"]
+        direction TB
+        subgraph PA["node pool: pool-&lt;A&gt; (proc=A)"]
+            OBA["ns boutique-A<br/>Online Boutique x11 + loadgenerator"]
+        end
+        subgraph PB["node pool: pool-&lt;B&gt; (proc=B)"]
+            OBB["ns boutique-B<br/>Online Boutique x11 + loadgenerator"]
+        end
+        subgraph MON["ns monitoring"]
+            FE["GMP query frontend"]
+            GRAF["Grafana<br/>(provisioned datasource + dashboard)"]
+        end
+        KUBELET["kubelet + cAdvisor<br/>(OperatorConfig: kubeletScraping)"]
+    end
+    CICD --> TF
+    CICD --> GKE
+    MK --> TF
+    MK --> GKE
+    OBA -- "container CPU / memory" --> KUBELET
+    OBB -- "container CPU / memory" --> KUBELET
+    KUBELET -- "managed collection (gke-node-sa)" --> MONARCH["Managed Service for Prometheus (Monarch)"]
+    FE -- "PromQL (WI: gmp-reader)" --> MONARCH
+    GRAF -- "Prometheus datasource" --> FE
+    BENCH["run-benchmark.sh"] -- "publish manifest + metrics" --> GCS
+```
+
+> The 2 processor pools (A/B) are chosen in `config/platforms.json`. Full design decisions,
+> methodology, and the rendered Mermaid source: **[docs/architecture-automation.md](docs/architecture-automation.md)**.
+
 ## What it does
 
 - Provisions a **GKE Standard** cluster with two node pools — **`pool-n2`** (`n2-standard-4`,
